@@ -1,43 +1,16 @@
 from importlib import util
 from chimumin import Chimumin
 import asyncio
-from aioconsole import (ainput, aprint)
 import os
-import sys
+import curses
+from curses.textpad import (rectangle, Textbox)
+from curses import (newwin, wrapper)
 
-chimumin = Chimumin("https://matrix.org", os.environ["MATRIX_USERNAME"])
-
-async def synchronize():
-    response = await chimumin.login(os.environ["MATRIX_PASSWORD"])
-    print(response)
-    await chimumin.sync_forever(1000)
-    print('[SYSTEM]: Ready.')
-
-
-async def get_input():
-    while True:
-        await aprint(await ainput())
-
-
-async def main():
-    task1 = asyncio.create_task(synchronize())
-    task2 = asyncio.create_task(get_input())
-    await asyncio.wait([task1, task2])
-
-
-if __name__ == "__main__":
-    print('Running main.')
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-    except Exception as e:
-        pass
-    finally:
-        loop.close()
+chimumin = None
 
 
 async def process_command(text):
-    print(f'Processing command: {text}')
+    # chimumin.printchat('Processing command: {}\n'.format(text))
 
     if len(text) > 0 and text[0] == "/":
         text = text[1:]
@@ -45,4 +18,101 @@ async def process_command(text):
         await chimumin.run_command(command, text[len(command) + 1:])
 
 
-# await chimumin._synced(await chimumin.sync())
+async def synchronize():
+    response = await chimumin.login(os.environ["MATRIX_PASSWORD"])
+
+    await chimumin._synced(await chimumin.sync())
+
+    await chimumin.run_command('ls')
+
+    await chimumin.sync_forever(1000)
+
+
+# https://stackoverflow.com/questions/48803765/is-there-a-way-to-getkey-getchar-asynchronously-in-python
+from threading import Thread
+
+event_loop = None
+
+def _get_input(stdscr):
+    (Y, X) = stdscr.getmaxyx()
+
+    cmdwin = newwin(1, X - 2, Y - 3, 1)
+
+    cmdbox = Textbox(cmdwin)
+    cmdbox.stripspaces = True
+    cmdbox.edit()
+    message = cmdbox.gather().strip()
+    cmdwin.refresh()
+    
+    asyncio.run_coroutine_threadsafe(process_command(message), event_loop)
+
+
+def get_input():
+    while True:
+        wrapper(_get_input)
+#
+
+
+async def start(stdscr):
+    task1 = asyncio.create_task(synchronize())
+    # task2 = asyncio.create_task(get_input(stdscr))
+    await asyncio.wait([task1])
+    # await asyncio.wait([task1, task2])
+
+
+def init_window(stdscr):
+    stdscr.clear()
+    stdscr.keypad(True)
+
+    (Y, X) = stdscr.getmaxyx()
+    
+    rectangle(stdscr, 1, 0, Y - 5, X - 1)
+    rectangle(stdscr, Y - 4, 0, Y - 2, X - 1)
+    stdscr.refresh()
+    
+    stdscr.addstr(0, 0, "chimumin - yet another matrix client ")
+    stdscr.refresh()
+
+    chatwin = newwin(Y - 7, X - 2, 2, 1)
+    chatwin.scrollok(True)
+    curses.echo(True)
+    
+    global chimumin
+    chimumin = Chimumin("https://matrix.org", os.environ["MATRIX_USERNAME"], chatwin)
+
+
+def end_window(stdscr):
+    curses.nocbreak()
+    stdscr.keypad(False)
+    curses.echo()
+    curses.endwin()
+
+    stdscr.refresh()
+
+
+def main(stdscr):    
+    init_window(stdscr)
+
+    global scr
+    scr = stdscr
+
+    global event_loop
+    
+    event_loop = asyncio.get_event_loop()
+    loop = event_loop
+
+    thread = Thread(target = get_input)
+    thread.start()
+    
+    try:
+        loop.run_until_complete(start(stdscr))
+    except Exception as e:
+        pass
+    finally:
+        loop.close()
+    
+    end_window(stdscr)
+
+
+if __name__ == "__main__":
+    curses.wrapper(main)

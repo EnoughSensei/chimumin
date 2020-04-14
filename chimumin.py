@@ -1,23 +1,33 @@
 from importlib import util
 from nio import (AsyncClient, SyncResponse, RoomNameEvent, RoomAliasEvent)
 import asyncio
-
+import datetime
 
 class Chimumin(AsyncClient):
     commands = {}
-    room_names = {}
-    room_ids = {}
-    current_room_id = ""
-    last_batch = ""
+    
+
+    def printchat(self, text, system = False, time = True):
+        text = ": " + text
+        if system:
+            text = '[SYSTEM]' + text
+        
+        if time:
+            a = datetime.datetime.now()
+            text = '[' + ("%s:%s:%s.%s" % (a.hour, a.minute, a.second, str(a.microsecond)[:2])) + ']' + text
+
+        self.chatwin.addstr(text)
+        self.chatwin.refresh()
+
 
     async def sync_rooms(self, rooms):
         for id in rooms.join:
             for event in rooms.join[id].timeline.events:
-                print(f'{id} : {type(event)}')
+                # self.printchat('{} : {}\n'.format(id, type(event)), True)
                 if isinstance(event, RoomNameEvent):
                     name = event.name
 
-                    if not id in self.room_names:
+                    if id not in self.room_names:
                         self.room_ids[name] = id
                         self.room_names[id] = name
                     else:
@@ -28,7 +38,7 @@ class Chimumin(AsyncClient):
                 elif isinstance(event, RoomAliasEvent):
                     name = event.canonical_alias
 
-                    if not id in self.room_names:
+                    if id not in self.room_names:
                         self.room_ids[name] = id
                         self.room_names[id] = name
                     else:
@@ -36,50 +46,63 @@ class Chimumin(AsyncClient):
                         self.room_names[id] = name
                         self.room_ids[name] = id
 
+
     async def _synced(self, response):
-        print(f"We synced, token: {response.next_batch}")
-        self.last_batch = response.next_batch
+        # self.printchat("We synced, token: {}\n".format(response.next_batch), True)
+        self.next_batch = response.next_batch
         await self.sync_rooms(response.rooms)
     
-    def __init__(self, homeserver, username):
+
+    def __init__(self, homeserver, username, chatwin):
         super().__init__(homeserver, username)
         self.add_response_callback(self._synced, SyncResponse)
+        self.chatwin = chatwin
+        self.room_names = {}
+        self.room_ids = {}
+        self.current_room_id = ""
     
+
     async def run_command(self, command, content = None):
         if command in self.commands:
+            # self.printchat('Processing {} with {}.\n'.format(command, content), True)
             await self.commands[command](self, content)
+
 
 def command(f):
     print(f'Adding {f.__name__} to the commands')
     Chimumin.commands[f.__name__] = f
     print('Added.')
 
+
 @command
 async def send(self, text):
-    print(f'Sending {text} message to {self.rooms[self.current_room_id].name}')
+    if self.current_room_id not in self.room_names.keys():
+        self.printchat('Not in a room.\n', True)
+        return
+    
+    self.printchat('Sending {} message to {}\n'.format(text, self.room_names[self.current_room_id]), True)
     await self.room_send(self.current_room_id, 'm.room.message', content={
             "msgtype": "m.text",
             "body": text
         })
-    print('Sent.')
+    self.printchat('Sent.\n', True)
+
 
 @command
 async def room(self, text):
-    print(f'Changing room to {text}')
-    
-    if not text in self.room_ids:
-        print(f'Invalid room name.')
+    self.printchat('Changing room to {}\n'.format(text), True)
+
+    if text not in self.room_ids.keys():
+        self.printchat('Invalid room name.\n', True)
         return
-    
-    self.room_name = text
+
     self.current_room_id = self.room_ids[text]
-    print('Room changed.')
+    self.printchat('Room changed.\n', True)
+
 
 @command
 async def ls(self, text = None):
-    print("Listing joined rooms:")
+    self.printchat("Listing joined rooms:\n", True)
 
-    for id in self.room_names:
-        print(f'{id} -> {self.room_names[id]}')
-    
-    print('----------')
+    for name in self.room_ids:
+        self.printchat('{} -> {}\n'.format(name, self.room_ids[name]), True)

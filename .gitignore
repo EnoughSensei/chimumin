@@ -2,4 +2,4 @@ env/
 next_batch
 __pycache__
 .vscode
-requirements.txt
+test.py
