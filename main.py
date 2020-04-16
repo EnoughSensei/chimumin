@@ -21,7 +21,9 @@ async def process_command(text):
 async def synchronize():
     response = await chimumin.login(os.environ["MATRIX_PASSWORD"])
 
-    await chimumin._synced(await chimumin.sync())
+    response = await chimumin.sync()
+
+    await chimumin.r_callbacks['_sync_response']['func'](chimumin, response)
 
     await chimumin.run_command('ls')
 
@@ -61,24 +63,29 @@ async def start(stdscr):
 
 
 def init_window(stdscr):
+    curses.echo(False)
+
     stdscr.clear()
-    stdscr.keypad(True)
+    # stdscr.keypad(True)
 
     (Y, X) = stdscr.getmaxyx()
     
-    rectangle(stdscr, 1, 0, Y - 5, X - 1)
+    rectangle(stdscr, 1, 0, Y - 5, (X - 4 + 1) // 2 + 1)
+    rectangle(stdscr, 1, (X - 4) // 2 + 3, Y - 5, X - 1)
     rectangle(stdscr, Y - 4, 0, Y - 2, X - 1)
     stdscr.refresh()
     
     stdscr.addstr(0, 0, "chimumin - yet another matrix client ")
     stdscr.refresh()
 
-    chatwin = newwin(Y - 7, X - 2, 2, 1)
+    chatwin = newwin(Y - 7, (X - 4 + 1) // 2, 2, 1)
     chatwin.scrollok(True)
-    curses.echo(True)
+
+    syswin = newwin(Y - 7, (X - 4) // 2, 2, (X - 4) // 2 + 4)
+    syswin.scrollok(True)
     
     global chimumin
-    chimumin = Chimumin("https://matrix.org", os.environ["MATRIX_USERNAME"], chatwin)
+    chimumin = Chimumin("https://matrix.org", os.environ["MATRIX_USERNAME"], chatwin, syswin)
 
 
 def end_window(stdscr):
@@ -112,6 +119,9 @@ def main(stdscr):
         loop.close()
     
     end_window(stdscr)
+
+    # while True:
+    #     pass
 
 
 if __name__ == "__main__":
